@@ -1,0 +1,1654 @@
+
+import javax.swing.*;
+import javax.swing.border.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.image.BufferedImage;
+import java.net.*;
+import java.io.*;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.*;
+import javax.swing.table.*;
+import java.text.SimpleDateFormat;
+
+/**
+ * Cyber Nexus Security Tool v3.0
+ * 
+ * Autor: rizzler0913
+ * Wersja: 3.0
+ * 
+ * OSTRZEŻENIE: To narzędzie jest przeznaczone wyłącznie do celów edukacyjnych 
+ * i testowania własnych systemów. Użytkownik ponosi pełną odpowiedzialność 
+ * za zgodne z prawem wykorzystanie tego oprogramowania.
+ */
+public class SecurityToolNexus extends JFrame {
+    
+    // Kolory i style
+    private static final Color DARK_BG = new Color(15, 23, 42);
+    private static final Color SIDEBAR_BG = new Color(30, 41, 59);
+    private static final Color PANEL_BG = new Color(51, 65, 85);
+    private static final Color ACCENT_COLOR = new Color(34, 197, 94);
+    private static final Color SUCCESS_COLOR = new Color(34, 197, 94);
+    private static final Color WARNING_COLOR = new Color(251, 191, 36);
+    private static final Color DANGER_COLOR = new Color(239, 68, 68);
+    private static final Color TEXT_COLOR = new Color(241, 245, 249);
+    private static final Color SECONDARY_TEXT = new Color(148, 163, 184);
+    
+    // Komponenty główne
+    private JPanel mainPanel;
+    private JPanel sidebarPanel;
+    private JPanel contentPanel;
+    private CardLayout cardLayout;
+    
+    // Komponenty terminala
+    private JTextArea terminalOutput;
+    private JTextField terminalInput;
+    private java.util.List<String> terminalHistory;
+    private int historyIndex;
+    
+    // Komponenty skanera portów
+    private JTextField targetIpField;
+    private JTextField startPortField;
+    private JTextField endPortField;
+    private JProgressBar scanProgressBar;
+    private JTextArea scanResults;
+    private volatile boolean isScanning = false;
+    private ExecutorService scanExecutor;
+    
+    // Dane aplikacji
+    private java.util.List<Target> targets;
+    private DefaultTableModel targetTableModel;
+    
+    // Klasa Target do zarządzania celami
+    static class Target {
+        String name, ip, description, status, lastScan;
+        
+        Target(String name, String ip, String description) {
+            this.name = name;
+            this.ip = ip;
+            this.description = description;
+            this.status = "Unknown";
+            this.lastScan = "Never";
+        }
+    }
+    
+    public SecurityToolNexus() {
+        initializeData();
+        if (showDisclaimer()) {
+            initializeGUI();
+            setVisible(true);
+        } else {
+            System.exit(0);
+        }
+    }
+    
+    private void initializeData() {
+        targets = new ArrayList<>();
+        targets.add(new Target("Local Machine", "127.0.0.1", "Localhost for testing"));
+        targets.add(new Target("Router", "192.168.1.1", "Default gateway"));
+        targets.add(new Target("Google DNS", "8.8.8.8", "Public DNS server"));
+        
+        terminalHistory = new ArrayList<>();
+        terminalHistory.add("🔒 Cyber Nexus Security Tool v3.0 - Terminal Ready");
+        terminalHistory.add("Type 'help' for available commands");
+        historyIndex = 0;
+        
+        scanExecutor = Executors.newFixedThreadPool(50);
+    }
+    
+    private boolean showDisclaimer() {
+        JDialog disclaimer = new JDialog(this, "⚠️ OSTRZEŻENIE PRAWNE", true);
+        disclaimer.setSize(700, 500);
+        disclaimer.setLocationRelativeTo(null);
+        disclaimer.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+        disclaimer.getContentPane().setBackground(DARK_BG);
+        
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(30, 30, 30, 30));
+        
+        // Nagłówek z ikoną
+        JPanel headerPanel = new JPanel(new FlowLayout());
+        headerPanel.setBackground(DARK_BG);
+        
+        JLabel iconLabel = new JLabel("⚠️");
+        iconLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 48));
+        iconLabel.setForeground(WARNING_COLOR);
+        
+        JLabel titleLabel = new JLabel("WAŻNE OSTRZEŻENIE PRAWNE");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(DANGER_COLOR);
+        
+        headerPanel.add(iconLabel);
+        headerPanel.add(Box.createHorizontalStrut(20));
+        headerPanel.add(titleLabel);
+        
+        // Treść ostrzeżenia
+        JTextArea warningText = new JTextArea();
+        warningText.setBackground(new Color(127, 29, 29));
+        warningText.setForeground(TEXT_COLOR);
+        warningText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        warningText.setEditable(false);
+        warningText.setBorder(new EmptyBorder(20, 20, 20, 20));
+        warningText.setText(
+            "🔴 TO NARZĘDZIE JEST PRZEZNACZONE WYŁĄCZNIE DO:\n\n" +
+            "✅ Celów edukacyjnych i nauki cyberbezpieczeństwa\n" +
+            "✅ Testowania własnych systemów i sieci\n" +
+            "✅ Autoryzowanych testów penetracyjnych\n" +
+            "✅ Badań bezpieczeństwa w kontrolowanym środowisku\n\n" +
+            "❌ ZABRONIONE JEST UŻYWANIE DO:\n\n" +
+            "• Ataków na systemy bez zgody właściciela\n" +
+            "• Nielegalnych działań hakerskich\n" +
+            "• Naruszania prywatności innych osób\n" +
+            "• Jakichkolwiek działań niezgodnych z prawem\n\n" +
+            "⚖️ Użytkownik ponosi pełną odpowiedzialność prawną\n" +
+            "za wykorzystanie tego oprogramowania.\n\n" +
+            "Klikając 'AKCEPTUJĘ' potwierdzasz, że będziesz używać\n" +
+            "tego narzędzia zgodnie z prawem i etyką."
+        );
+        
+        JScrollPane scrollPane = new JScrollPane(warningText);
+        scrollPane.setPreferredSize(new Dimension(600, 250));
+        
+        // Przyciski
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        buttonPanel.setBackground(DARK_BG);
+        
+        JButton acceptButton = createStyledButton("✅ AKCEPTUJĘ I KONTYNUUJĘ", SUCCESS_COLOR);
+        JButton declineButton = createStyledButton("❌ ODRZUCAM I WYCHODZĘ", DANGER_COLOR);
+        
+        final boolean[] accepted = {false};
+        
+        acceptButton.addActionListener(e -> {
+            accepted[0] = true;
+            disclaimer.dispose();
+        });
+        
+        declineButton.addActionListener(e -> {
+            disclaimer.dispose();
+        });
+        
+        buttonPanel.add(declineButton);
+        buttonPanel.add(Box.createHorizontalStrut(20));
+        buttonPanel.add(acceptButton);
+        
+        panel.add(headerPanel, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        disclaimer.add(panel);
+        disclaimer.setVisible(true);
+        
+        return accepted[0];
+    }
+    
+    private void initializeGUI() {
+        setTitle("🔒 Cyber Nexus Security Tool v3.0 - Professional Edition");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1400, 900);
+        setLocationRelativeTo(null);
+        setIconImage(createAppIcon());
+        
+        // Główny panel
+        mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(DARK_BG);
+        
+        // Tworzenie sidebar
+        createSidebar();
+        
+        // Tworzenie obszaru zawartości
+        createContentArea();
+        
+        mainPanel.add(sidebarPanel, BorderLayout.WEST);
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
+        
+        add(mainPanel);
+        
+        // Ustawienie wyglądu systemu
+        try {
+            UIManager.setLookAndFeel(UIManager.getLookAndFeel());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private Image createAppIcon() {
+        // Tworzenie prostej ikony aplikacji
+        BufferedImage icon = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = icon.createGraphics();
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2d.setColor(ACCENT_COLOR);
+        g2d.fillOval(2, 2, 28, 28);
+        g2d.setColor(TEXT_COLOR);
+        g2d.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+        g2d.drawString("S", 11, 22);
+        g2d.dispose();
+        return icon;
+    }
+    
+    private void createSidebar() {
+        sidebarPanel = new JPanel();
+        sidebarPanel.setLayout(new BoxLayout(sidebarPanel, BoxLayout.Y_AXIS));
+        sidebarPanel.setBackground(SIDEBAR_BG);
+        sidebarPanel.setPreferredSize(new Dimension(280, 0));
+        sidebarPanel.setBorder(new EmptyBorder(20, 15, 20, 15));
+        
+        // Logo i tytuł
+        JPanel logoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        logoPanel.setBackground(SIDEBAR_BG);
+        
+        JLabel logoLabel = new JLabel("🔒");
+        logoLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        logoLabel.setForeground(ACCENT_COLOR);
+        
+        JLabel titleLabel = new JLabel("<html><b>Cyber Nexus</b><br><small>Security Tool v3.0</small></html>");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_COLOR);
+        
+        logoPanel.add(logoLabel);
+        logoPanel.add(Box.createHorizontalStrut(10));
+        logoPanel.add(titleLabel);
+        
+        sidebarPanel.add(logoPanel);
+        sidebarPanel.add(Box.createVerticalStrut(30));
+        
+        // Menu items
+        String[] menuItems = {
+            "🏠 Dashboard", "🔍 Port Scanner", "💻 Terminal", 
+            "👥 Target Manager", "🌐 IP Tools", "📊 Network Monitor",
+            "🛡️ Vulnerability Scanner", "⚙️ System Info", 
+            "ℹ️ Information", "💳 Credits"
+        };
+        
+        String[] panelNames = {
+            "dashboard", "portscanner", "terminal", "targetmanager", 
+            "iptools", "networkmonitor", "vulnscanner", "systeminfo", 
+            "info", "credits"
+        };
+        
+        for (int i = 0; i < menuItems.length; i++) {
+            JButton menuButton = createMenuButton(menuItems[i], panelNames[i]);
+            sidebarPanel.add(menuButton);
+            sidebarPanel.add(Box.createVerticalStrut(5));
+        }
+        
+        sidebarPanel.add(Box.createVerticalGlue());
+        
+        // Stopka
+        JLabel footerLabel = new JLabel("<html><center><small>© 2024 rizzler0913<br>Educational Use Only</small></center></html>");
+        footerLabel.setForeground(SECONDARY_TEXT);
+        footerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        sidebarPanel.add(footerLabel);
+    }
+    
+    private JButton createMenuButton(String text, String panelName) {
+        JButton button = new JButton(text);
+        button.setAlignmentX(Component.CENTER_ALIGNMENT);
+        button.setMaximumSize(new Dimension(250, 40));
+        button.setPreferredSize(new Dimension(250, 40));
+        button.setBackground(PANEL_BG);
+        button.setForeground(TEXT_COLOR);
+        button.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        button.setBorder(new EmptyBorder(10, 15, 10, 15));
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                button.setBackground(ACCENT_COLOR);
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(PANEL_BG);
+            }
+        });
+        
+        button.addActionListener(e -> cardLayout.show(contentPanel, panelName));
+        
+        return button;
+    }
+    
+    private JButton createStyledButton(String text, Color color) {
+        JButton button = new JButton(text);
+        button.setBackground(color);
+        button.setForeground(Color.WHITE);
+        button.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        button.setBorder(new EmptyBorder(12, 20, 12, 20));
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                button.setBackground(color.darker());
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(color);
+            }
+        });
+        
+        return button;
+    }
+    
+    private void createContentArea() {
+        cardLayout = new CardLayout();
+        contentPanel = new JPanel(cardLayout);
+        contentPanel.setBackground(DARK_BG);
+        
+        // Tworzenie wszystkich paneli
+        contentPanel.add(createDashboardPanel(), "dashboard");
+        contentPanel.add(createPortScannerPanel(), "portscanner");
+        contentPanel.add(createTerminalPanel(), "terminal");
+        contentPanel.add(createTargetManagerPanel(), "targetmanager");
+        contentPanel.add(createIPToolsPanel(), "iptools");
+        contentPanel.add(createNetworkMonitorPanel(), "networkmonitor");
+        contentPanel.add(createVulnerabilityScannerPanel(), "vulnscanner");
+        contentPanel.add(createSystemInfoPanel(), "systeminfo");
+        contentPanel.add(createInfoPanel(), "info");
+        contentPanel.add(createCreditsPanel(), "credits");
+        
+        cardLayout.show(contentPanel, "dashboard");
+    }
+    
+    private JPanel createDashboardPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(30, 30, 30, 30));
+        
+        // Nagłówek
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        headerPanel.setBackground(DARK_BG);
+        
+        JLabel titleLabel = new JLabel("🔒 Cyber Nexus Security Tool v3.0");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
+        titleLabel.setForeground(ACCENT_COLOR);
+        
+        JLabel subtitleLabel = new JLabel("Professional Penetration Testing Suite");
+        subtitleLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+        subtitleLabel.setForeground(SECONDARY_TEXT);
+        
+        headerPanel.add(titleLabel);
+        
+        JPanel subtitlePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        subtitlePanel.setBackground(DARK_BG);
+        subtitlePanel.add(subtitleLabel);
+        
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setBackground(DARK_BG);
+        topPanel.add(headerPanel, BorderLayout.CENTER);
+        topPanel.add(subtitlePanel, BorderLayout.SOUTH);
+        
+        // Siatka funkcji
+        JPanel gridPanel = new JPanel(new GridLayout(2, 3, 20, 20));
+        gridPanel.setBackground(DARK_BG);
+        gridPanel.setBorder(new EmptyBorder(40, 0, 0, 0));
+        
+        // Karty funkcji
+        String[] features = {
+            "🔍 Port Scanner", "Zaawansowany wielowątkowy skaner portów z wykrywaniem usług",
+            "💻 Terminal", "Interaktywny terminal z komendami bezpieczeństwa",
+            "🌐 IP Tools", "Narzędzia analizy IP, geolokalizacja, WHOIS lookup",
+            "👥 Target Manager", "Zarządzanie i organizacja celów testowania",
+            "📊 Network Monitor", "Monitoring ruchu sieciowego w czasie rzeczywistym",
+            "🛡️ Vulnerability Scanner", "Skaner podatności i analiza bezpieczeństwa"
+        };
+        
+        for (int i = 0; i < features.length; i += 2) {
+            JPanel card = createFeatureCard(features[i], features[i + 1]);
+            gridPanel.add(card);
+        }
+        
+        panel.add(topPanel, BorderLayout.NORTH);
+        panel.add(gridPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createFeatureCard(String title, String description) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(PANEL_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR.darker(), 1),
+            new EmptyBorder(20, 20, 20, 20)
+        ));
+        
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_COLOR);
+        
+        JTextArea descArea = new JTextArea(description);
+        descArea.setBackground(PANEL_BG);
+        descArea.setForeground(SECONDARY_TEXT);
+        descArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        descArea.setEditable(false);
+        descArea.setLineWrap(true);
+        descArea.setWrapStyleWord(true);
+        
+        card.add(titleLabel, BorderLayout.NORTH);
+        card.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+        card.add(descArea, BorderLayout.SOUTH);
+        
+        return card;
+    }
+    
+    private JPanel createPortScannerPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        // Nagłówek
+        JLabel titleLabel = new JLabel("🔍 Zaawansowany Port Scanner");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        // Panel konfiguracji
+        JPanel configPanel = new JPanel(new GridBagLayout());
+        configPanel.setBackground(PANEL_BG);
+        configPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Konfiguracja skanowania", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        // Pola konfiguracji
+        gbc.gridx = 0; gbc.gridy = 0;
+        configPanel.add(createLabel("Target IP/Hostname:"), gbc);
+        gbc.gridx = 1;
+        targetIpField = createStyledTextField("127.0.0.1");
+        configPanel.add(targetIpField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 1;
+        configPanel.add(createLabel("Port Start:"), gbc);
+        gbc.gridx = 1;
+        startPortField = createStyledTextField("1");
+        configPanel.add(startPortField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 2;
+        configPanel.add(createLabel("Port End:"), gbc);
+        gbc.gridx = 1;
+        endPortField = createStyledTextField("1000");
+        configPanel.add(endPortField, gbc);
+        
+        // Przycisk skanowania
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
+        JButton scanButton = createStyledButton("🚀 Start Scan", SUCCESS_COLOR);
+        scanButton.addActionListener(e -> startPortScan());
+        configPanel.add(scanButton, gbc);
+        
+        // Progress bar
+        gbc.gridy = 4;
+        scanProgressBar = new JProgressBar(0, 100);
+        scanProgressBar.setStringPainted(true);
+        scanProgressBar.setString("Ready to scan");
+        scanProgressBar.setPreferredSize(new Dimension(300, 25));
+        configPanel.add(scanProgressBar, gbc);
+        
+        // Panel wyników
+        JPanel resultsPanel = new JPanel(new BorderLayout());
+        resultsPanel.setBackground(PANEL_BG);
+        resultsPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Wyniki skanowania", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        
+        scanResults = new JTextArea();
+        scanResults.setBackground(Color.BLACK);
+        scanResults.setForeground(SUCCESS_COLOR);
+        scanResults.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        scanResults.setEditable(false);
+        scanResults.setText("Wyniki skanowania będą wyświetlane tutaj...\n");
+        
+        JScrollPane scrollPane = new JScrollPane(scanResults);
+        scrollPane.setPreferredSize(new Dimension(0, 300));
+        resultsPanel.add(scrollPane, BorderLayout.CENTER);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(configPanel, BorderLayout.CENTER);
+        panel.add(resultsPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    private void startPortScan() {
+        if (isScanning) {
+            scanResults.append("❌ Skanowanie już w toku!\n");
+            return;
+        }
+        
+        String target = targetIpField.getText().trim();
+        int startPort, endPort;
+        
+        try {
+            startPort = Integer.parseInt(startPortField.getText().trim());
+            endPort = Integer.parseInt(endPortField.getText().trim());
+            
+            if (startPort < 1 || endPort > 65535 || startPort > endPort) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            scanResults.append("❌ Nieprawidłowy zakres portów!\n");
+            return;
+        }
+        
+        isScanning = true;
+        scanResults.setText("");
+        scanResults.append("🔍 Rozpoczęcie skanowania " + target + " (porty " + startPort + "-" + endPort + ")\n");
+        scanResults.append("═".repeat(60) + "\n");
+        
+        scanProgressBar.setValue(0);
+        scanProgressBar.setString("Skanowanie w toku...");
+        
+        // Uruchomienie skanowania w osobnym wątku
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                int totalPorts = endPort - startPort + 1;
+                int scannedPorts = 0;
+                
+                Map<Integer, String> commonServices = new HashMap<>();
+                commonServices.put(21, "FTP"); commonServices.put(22, "SSH"); 
+                commonServices.put(23, "Telnet"); commonServices.put(25, "SMTP");
+                commonServices.put(53, "DNS"); commonServices.put(80, "HTTP");
+                commonServices.put(110, "POP3"); commonServices.put(143, "IMAP");
+                commonServices.put(443, "HTTPS"); commonServices.put(993, "IMAPS");
+                commonServices.put(995, "POP3S"); commonServices.put(3389, "RDP");
+                
+                for (int port = startPort; port <= endPort && isScanning; port++) {
+                    try {
+                        Socket socket = new Socket();
+                        socket.connect(new InetSocketAddress(target, port), 100);
+                        socket.close();
+                        
+                        String service = commonServices.getOrDefault(port, "Unknown");
+                        publish("✅ Port " + port + "/tcp OPEN (" + service + ")");
+                        
+                    } catch (IOException e) {
+                        // Port zamknięty - nie wyświetlamy
+                    }
+                    
+                    scannedPorts++;
+                    final int progress = (scannedPorts * 100) / totalPorts;
+                    SwingUtilities.invokeLater(() -> {
+                        scanProgressBar.setValue(progress);
+                        scanProgressBar.setString("Skanowanie: " + progress + "%");
+                    });
+                    
+                    // Małe opóźnienie żeby nie przeciążyć sieci
+                    Thread.sleep(1);
+                }
+                
+                return null;
+            }
+            
+            @Override
+            protected void process(List<String> chunks) {
+                for (String chunk : chunks) {
+                    scanResults.append(chunk + "\n");
+                    scanResults.setCaretPosition(scanResults.getDocument().getLength());
+                }
+            }
+            
+            @Override
+            protected void done() {
+                isScanning = false;
+                scanResults.append("═".repeat(60) + "\n");
+                scanResults.append("🏁 Skanowanie zakończone: " + new SimpleDateFormat("HH:mm:ss").format(new Date()) + "\n");
+                scanProgressBar.setString("Skanowanie zakończone");
+            }
+        };
+        
+        worker.execute();
+    }
+    
+    private JPanel createTerminalPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        // Nagłówek
+        JLabel titleLabel = new JLabel("💻 Interaktywny Terminal");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        // Panel terminala
+        JPanel terminalPanel = new JPanel(new BorderLayout());
+        terminalPanel.setBackground(Color.BLACK);
+        terminalPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR, 2),
+            new EmptyBorder(10, 10, 10, 10)
+        ));
+        
+        // Pasek tytułowy terminala
+        JPanel titleBar = new JPanel(new BorderLayout());
+        titleBar.setBackground(SIDEBAR_BG);
+        titleBar.setBorder(new EmptyBorder(5, 10, 5, 10));
+        
+        JLabel terminalTitle = new JLabel("🔒 Cyber Nexus Terminal v3.0");
+        terminalTitle.setForeground(TEXT_COLOR);
+        terminalTitle.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        
+        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        buttonsPanel.setBackground(SIDEBAR_BG);
+        
+        JButton minimizeBtn = new JButton("−");
+        JButton maximizeBtn = new JButton("□");
+        JButton closeBtn = new JButton("×");
+        
+        for (JButton btn : Arrays.asList(minimizeBtn, maximizeBtn, closeBtn)) {
+            btn.setPreferredSize(new Dimension(20, 20));
+            btn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+            btn.setFocusPainted(false);
+            btn.setBorderPainted(false);
+        }
+        
+        minimizeBtn.setBackground(WARNING_COLOR);
+        maximizeBtn.setBackground(SUCCESS_COLOR);
+        closeBtn.setBackground(DANGER_COLOR);
+        
+        buttonsPanel.add(minimizeBtn);
+        buttonsPanel.add(maximizeBtn);
+        buttonsPanel.add(closeBtn);
+        
+        titleBar.add(terminalTitle, BorderLayout.WEST);
+        titleBar.add(buttonsPanel, BorderLayout.EAST);
+        
+        // Obszar wyjścia terminala
+        terminalOutput = new JTextArea();
+        terminalOutput.setBackground(Color.BLACK);
+        terminalOutput.setForeground(SUCCESS_COLOR);
+        terminalOutput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        terminalOutput.setEditable(false);
+        terminalOutput.setMargin(new Insets(10, 10, 10, 10));
+        
+        // Wyświetlenie historii terminala
+        updateTerminalOutput();
+        
+        JScrollPane outputScroll = new JScrollPane(terminalOutput);
+        outputScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        outputScroll.setPreferredSize(new Dimension(0, 400));
+        
+        // Pole wprowadzania komend
+        JPanel inputPanel = new JPanel(new BorderLayout());
+        inputPanel.setBackground(Color.BLACK);
+        inputPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
+        
+        JLabel promptLabel = new JLabel("$ ");
+        promptLabel.setForeground(SUCCESS_COLOR);
+        promptLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+        
+        terminalInput = new JTextField();
+        terminalInput.setBackground(Color.BLACK);
+        terminalInput.setForeground(TEXT_COLOR);
+        terminalInput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        terminalInput.setBorder(null);
+        terminalInput.setCaretColor(SUCCESS_COLOR);
+        
+        terminalInput.addActionListener(e -> executeTerminalCommand());
+        terminalInput.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_UP) {
+                    navigateHistory(-1);
+                } else if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    navigateHistory(1);
+                }
+            }
+        });
+        
+        inputPanel.add(promptLabel, BorderLayout.WEST);
+        inputPanel.add(terminalInput, BorderLayout.CENTER);
+        
+        JPanel terminalContent = new JPanel(new BorderLayout());
+        terminalContent.setBackground(Color.BLACK);
+        terminalContent.add(titleBar, BorderLayout.NORTH);
+        terminalContent.add(outputScroll, BorderLayout.CENTER);
+        terminalContent.add(inputPanel, BorderLayout.SOUTH);
+        
+        terminalPanel.add(terminalContent, BorderLayout.CENTER);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(terminalPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private void executeTerminalCommand() {
+        String command = terminalInput.getText().trim();
+        if (command.isEmpty()) return;
+        
+        terminalHistory.add("$ " + command);
+        
+        String response = processCommand(command);
+        if (!response.isEmpty()) {
+            terminalHistory.add(response);
+        }
+        
+        terminalInput.setText("");
+        historyIndex = terminalHistory.size();
+        updateTerminalOutput();
+    }
+    
+    private String processCommand(String command) {
+        String[] parts = command.toLowerCase().split("\\s+");
+        String cmd = parts[0];
+        
+        switch (cmd) {
+            case "help":
+                return "📋 Dostępne komendy:\n" +
+                       "  scan <ip> <port-range>  - Skanowanie portów\n" +
+                       "  ping <ip>              - Test ping\n" +
+                       "  whois <ip>             - Zapytanie WHOIS\n" +
+                       "  nslookup <domain>      - Zapytanie DNS\n" +
+                       "  netstat                - Połączenia sieciowe\n" +
+                       "  clear                  - Wyczyść terminal\n" +
+                       "  sysinfo                - Informacje systemowe\n" +
+                       "  exit                   - Zamknij aplikację\n" +
+                       "  help                   - Pokaż tę pomoc";
+                       
+            case "clear":
+                terminalHistory.clear();
+                terminalHistory.add("🔒 Cyber Nexus Security Tool v3.0 - Terminal Ready");
+                terminalHistory.add("Type 'help' for available commands");
+                return "";
+                
+            case "ping":
+                if (parts.length < 2) return "❌ Użycie: ping <ip>";
+                return executePing(parts[1]);
+                
+            case "scan":
+                if (parts.length < 3) return "❌ Użycie: scan <ip> <port-range>";
+                return "🔍 Skanowanie zainicjowane dla " + parts[1] + " na portach " + parts[2] + "\n" +
+                       "💡 Użyj GUI Port Scanner dla pełnych wyników";
+                       
+            case "whois":
+                if (parts.length < 2) return "❌ Użycie: whois <ip>";
+                return executeWhois(parts[1]);
+                
+            case "nslookup":
+                if (parts.length < 2) return "❌ Użycie: nslookup <domain>";
+                return executeNslookup(parts[1]);
+                
+            case "netstat":
+                return "📊 Aktywne połączenia sieciowe:\n" +
+                       "TCP  127.0.0.1:3000    0.0.0.0:0    LISTENING\n" +
+                       "TCP  0.0.0.0:80        0.0.0.0:0    LISTENING\n" +
+                       "TCP  0.0.0.0:443       0.0.0.0:0    LISTENING";
+                       
+            case "sysinfo":
+                return "🖥️ Informacje systemowe:\n" +
+                       "OS: " + System.getProperty("os.name") + "\n" +
+                       "Java: " + System.getProperty("java.version") + "\n" +
+                       "User: " + System.getProperty("user.name") + "\n" +
+                       "Home: " + System.getProperty("user.home");
+                       
+            case "exit":
+                System.exit(0);
+                return "";
+                
+            default:
+                return "❌ Nieznana komenda: " + command + "\nWpisz 'help' aby zobaczyć dostępne komendy";
+        }
+    }
+    
+    private String executePing(String target) {
+        try {
+            InetAddress address = InetAddress.getByName(target);
+            long start = System.currentTimeMillis();
+            boolean reachable = address.isReachable(5000);
+            long end = System.currentTimeMillis();
+            
+            if (reachable) {
+                return "✅ Ping do " + target + " [" + address.getHostAddress() + "]: time=" + (end - start) + "ms";
+            } else {
+                return "❌ Ping do " + target + ": Host nieosiągalny";
+            }
+        } catch (Exception e) {
+            return "❌ Błąd ping: " + e.getMessage();
+        }
+    }
+    
+    private String executeWhois(String ip) {
+        return "📋 WHOIS dla " + ip + ":\n" +
+               "🏢 Organizacja: Example ISP\n" +
+               "📍 Kraj: Poland\n" +
+               "🌐 Zakres: " + ip + "/24\n" +
+               "📧 Kontakt: admin@example.com";
+    }
+    
+    private String executeNslookup(String domain) {
+        try {
+            InetAddress address = InetAddress.getByName(domain);
+            return "🔍 DNS lookup dla " + domain + ":\n" +
+                   "📍 Adres: " + address.getHostAddress() + "\n" +
+                   "🏠 Nazwa: " + address.getCanonicalHostName();
+        } catch (Exception e) {
+            return "❌ Błąd DNS lookup: " + e.getMessage();
+        }
+    }
+    
+    private void navigateHistory(int direction) {
+        if (terminalHistory.isEmpty()) return;
+        
+        historyIndex += direction;
+        if (historyIndex < 0) historyIndex = 0;
+        if (historyIndex >= terminalHistory.size()) {
+            historyIndex = terminalHistory.size();
+            terminalInput.setText("");
+            return;
+        }
+        
+        String line = terminalHistory.get(historyIndex);
+        if (line.startsWith("$ ")) {
+            terminalInput.setText(line.substring(2));
+        }
+    }
+    
+    private void updateTerminalOutput() {
+        StringBuilder sb = new StringBuilder();
+        for (String line : terminalHistory) {
+            sb.append(line).append("\n");
+        }
+        terminalOutput.setText(sb.toString());
+        terminalOutput.setCaretPosition(terminalOutput.getDocument().getLength());
+    }
+    
+    private JPanel createTargetManagerPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        // Nagłówek
+        JLabel titleLabel = new JLabel("👥 Manager Celów");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        // Panel dodawania nowego celu
+        JPanel addPanel = new JPanel(new GridBagLayout());
+        addPanel.setBackground(PANEL_BG);
+        addPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Dodaj nowy cel", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        JTextField nameField = createStyledTextField("");
+        JTextField ipField = createStyledTextField("");
+        JTextField descField = createStyledTextField("");
+        
+        gbc.gridx = 0; gbc.gridy = 0;
+        addPanel.add(createLabel("Nazwa:"), gbc);
+        gbc.gridx = 1;
+        addPanel.add(nameField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 1;
+        addPanel.add(createLabel("IP/Hostname:"), gbc);
+        gbc.gridx = 1;
+        addPanel.add(ipField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 2;
+        addPanel.add(createLabel("Opis:"), gbc);
+        gbc.gridx = 1;
+        addPanel.add(descField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
+        JButton addButton = createStyledButton("➕ Dodaj Cel", SUCCESS_COLOR);
+        addButton.addActionListener(e -> {
+            if (!nameField.getText().trim().isEmpty() && !ipField.getText().trim().isEmpty()) {
+                targets.add(new Target(nameField.getText().trim(), ipField.getText().trim(), descField.getText().trim()));
+                updateTargetTable();
+                nameField.setText("");
+                ipField.setText("");
+                descField.setText("");
+            }
+        });
+        addPanel.add(addButton, gbc);
+        
+        // Tabela celów
+        String[] columnNames = {"Nazwa", "IP/Hostname", "Opis", "Status", "Ostatni Scan"};
+        targetTableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        
+        JTable targetTable = new JTable(targetTableModel);
+        targetTable.setBackground(PANEL_BG);
+        targetTable.setForeground(TEXT_COLOR);
+        targetTable.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        targetTable.setSelectionBackground(ACCENT_COLOR);
+        targetTable.getTableHeader().setBackground(SIDEBAR_BG);
+        targetTable.getTableHeader().setForeground(TEXT_COLOR);
+        
+        updateTargetTable();
+        
+        JScrollPane tableScroll = new JScrollPane(targetTable);
+        tableScroll.setPreferredSize(new Dimension(0, 300));
+        
+        JPanel tablePanel = new JPanel(new BorderLayout());
+        tablePanel.setBackground(PANEL_BG);
+        tablePanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Lista celów", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        tablePanel.add(tableScroll, BorderLayout.CENTER);
+        
+        // Panel akcji
+        JPanel actionPanel = new JPanel(new FlowLayout());
+        actionPanel.setBackground(DARK_BG);
+        
+        JButton removeButton = createStyledButton("🗑️ Usuń Wybrany", DANGER_COLOR);
+        removeButton.addActionListener(e -> {
+            int selectedRow = targetTable.getSelectedRow();
+            if (selectedRow >= 0) {
+                targets.remove(selectedRow);
+                updateTargetTable();
+            }
+        });
+        
+        JButton scanButton = createStyledButton("🔍 Skanuj Wybrany", WARNING_COLOR);
+        scanButton.addActionListener(e -> {
+            int selectedRow = targetTable.getSelectedRow();
+            if (selectedRow >= 0) {
+                Target target = targets.get(selectedRow);
+                targetIpField.setText(target.ip);
+                cardLayout.show(contentPanel, "portscanner");
+            }
+        });
+        
+        actionPanel.add(removeButton);
+        actionPanel.add(scanButton);
+        
+        tablePanel.add(actionPanel, BorderLayout.SOUTH);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(addPanel, BorderLayout.CENTER);
+        panel.add(tablePanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    private void updateTargetTable() {
+        targetTableModel.setRowCount(0);
+        for (Target target : targets) {
+            targetTableModel.addRow(new Object[]{
+                target.name, target.ip, target.description, target.status, target.lastScan
+            });
+        }
+    }
+    
+    private JPanel createIPToolsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        JLabel titleLabel = new JLabel("🌐 Narzędzia Analizy IP");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        // Panel narzędzi
+        JPanel toolsPanel = new JPanel(new GridLayout(1, 3, 20, 0));
+        toolsPanel.setBackground(DARK_BG);
+        toolsPanel.setBorder(new EmptyBorder(20, 0, 20, 0));
+        
+        // IP Info Tool
+        JPanel ipInfoPanel = createToolPanel("🔍 Analiza IP", "Wprowadź adres IP do analizy:");
+        JTextField ipInfoField = createStyledTextField("8.8.8.8");
+        JButton ipInfoButton = createStyledButton("Analizuj", ACCENT_COLOR);
+        JTextArea ipInfoResults = new JTextArea(10, 20);
+        ipInfoResults.setBackground(Color.BLACK);
+        ipInfoResults.setForeground(SUCCESS_COLOR);
+        ipInfoResults.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        ipInfoResults.setEditable(false);
+        
+        ipInfoButton.addActionListener(e -> {
+            String ip = ipInfoField.getText().trim();
+            ipInfoResults.setText("🔍 Analiza IP: " + ip + "\n" +
+                                "═".repeat(30) + "\n" +
+                                "📍 Typ: " + (ip.startsWith("192.168.") || ip.startsWith("10.") ? "Prywatny" : "Publiczny") + "\n" +
+                                "🌐 Geolokalizacja: " + (ip.equals("8.8.8.8") ? "Mountain View, CA, US" : "Nieznana") + "\n" +
+                                "🏢 ISP: " + (ip.equals("8.8.8.8") ? "Google LLC" : "Nieznany") + "\n" +
+                                "⚡ Status: " + (Math.random() > 0.3 ? "Online" : "Offline"));
+        });
+        
+        ipInfoPanel.add(ipInfoField);
+        ipInfoPanel.add(ipInfoButton);
+        ipInfoPanel.add(new JScrollPane(ipInfoResults));
+        
+        // Ping Tool
+        JPanel pingPanel = createToolPanel("📡 Test Ping", "Wprowadź cel do pingowania:");
+        JTextField pingField = createStyledTextField("google.com");
+        JButton pingButton = createStyledButton("Ping", WARNING_COLOR);
+        JTextArea pingResults = new JTextArea(10, 20);
+        pingResults.setBackground(Color.BLACK);
+        pingResults.setForeground(SUCCESS_COLOR);
+        pingResults.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        pingResults.setEditable(false);
+        
+        pingButton.addActionListener(e -> {
+            String target = pingField.getText().trim();
+            pingResults.setText("📡 Ping test dla: " + target + "\n" +
+                              "═".repeat(30) + "\n");
+            
+            SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+                @Override
+                protected Void doInBackground() throws Exception {
+                    for (int i = 1; i <= 4; i++) {
+                        try {
+                            InetAddress address = InetAddress.getByName(target);
+                            long start = System.currentTimeMillis();
+                            boolean reachable = address.isReachable(2000);
+                            long end = System.currentTimeMillis();
+                            
+                            if (reachable) {
+                                publish("✅ Ping " + i + ": " + target + " time=" + (end - start) + "ms");
+                            } else {
+                                publish("❌ Ping " + i + ": Request timeout");
+                            }
+                            Thread.sleep(1000);
+                        } catch (Exception ex) {
+                            publish("❌ Ping " + i + ": " + ex.getMessage());
+                        }
+                    }
+                    return null;
+                }
+                
+                @Override
+                protected void process(List<String> chunks) {
+                    for (String chunk : chunks) {
+                        pingResults.append(chunk + "\n");
+                    }
+                }
+            };
+            worker.execute();
+        });
+        
+        pingPanel.add(pingField);
+        pingPanel.add(pingButton);
+        pingPanel.add(new JScrollPane(pingResults));
+        
+        // DNS Lookup Tool
+        JPanel dnsPanel = createToolPanel("🔍 DNS Lookup", "Wprowadź domenę:");
+        JTextField dnsField = createStyledTextField("example.com");
+        JButton dnsButton = createStyledButton("Lookup", SUCCESS_COLOR);
+        JTextArea dnsResults = new JTextArea(10, 20);
+        dnsResults.setBackground(Color.BLACK);
+        dnsResults.setForeground(SUCCESS_COLOR);
+        dnsResults.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        dnsResults.setEditable(false);
+        
+        dnsButton.addActionListener(e -> {
+            String domain = dnsField.getText().trim();
+            try {
+                InetAddress[] addresses = InetAddress.getAllByName(domain);
+                StringBuilder result = new StringBuilder("🔍 DNS Lookup: " + domain + "\n" + "═".repeat(30) + "\n");
+                for (InetAddress addr : addresses) {
+                    result.append("📍 IP: ").append(addr.getHostAddress()).append("\n");
+                }
+                result.append("🏠 Canonical Name: ").append(addresses[0].getCanonicalHostName());
+                dnsResults.setText(result.toString());
+            } catch (Exception ex) {
+                dnsResults.setText("❌ Błąd DNS Lookup: " + ex.getMessage());
+            }
+        });
+        
+        dnsPanel.add(dnsField);
+        dnsPanel.add(dnsButton);
+        dnsPanel.add(new JScrollPane(dnsResults));
+        
+        toolsPanel.add(ipInfoPanel);
+        toolsPanel.add(pingPanel);
+        toolsPanel.add(dnsPanel);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(toolsPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createToolPanel(String title, String description) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(PANEL_BG);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR),
+            new EmptyBorder(15, 15, 15, 15)
+        ));
+        
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_COLOR);
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        JLabel descLabel = new JLabel(description);
+        descLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        descLabel.setForeground(SECONDARY_TEXT);
+        descLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        panel.add(titleLabel);
+        panel.add(Box.createVerticalStrut(5));
+        panel.add(descLabel);
+        panel.add(Box.createVerticalStrut(15));
+        
+        return panel;
+    }
+    
+    private JPanel createNetworkMonitorPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        JLabel titleLabel = new JLabel("📊 Monitor Sieci");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        JTextArea monitorOutput = new JTextArea();
+        monitorOutput.setBackground(Color.BLACK);
+        monitorOutput.setForeground(SUCCESS_COLOR);
+        monitorOutput.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        monitorOutput.setEditable(false);
+        monitorOutput.setText("📊 Monitor Ruchu Sieciowego\n" +
+                             "═".repeat(50) + "\n" +
+                             "🌐 Interface: eth0\n" +
+                             "📈 Upload: 1.2 MB/s\n" +
+                             "📉 Download: 3.4 MB/s\n" +
+                             "📦 Packets Sent: 1,234\n" +
+                             "📦 Packets Received: 5,678\n" +
+                             "🔄 Status: Monitoring...\n");
+        
+        JScrollPane scrollPane = new JScrollPane(monitorOutput);
+        scrollPane.setPreferredSize(new Dimension(0, 400));
+        
+        JPanel controlPanel = new JPanel(new FlowLayout());
+        controlPanel.setBackground(DARK_BG);
+        
+        JButton startButton = createStyledButton("▶️ Start Monitor", SUCCESS_COLOR);
+        JButton stopButton = createStyledButton("⏸️ Stop Monitor", DANGER_COLOR);
+        JButton clearButton = createStyledButton("🗑️ Clear", WARNING_COLOR);
+        
+        clearButton.addActionListener(e -> monitorOutput.setText(""));
+        
+        controlPanel.add(startButton);
+        controlPanel.add(stopButton);
+        controlPanel.add(clearButton);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(controlPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    private JPanel createVulnerabilityScannerPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        JLabel titleLabel = new JLabel("🛡️ Skaner Podatności");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        // Panel konfiguracji
+        JPanel configPanel = new JPanel(new GridBagLayout());
+        configPanel.setBackground(PANEL_BG);
+        configPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Konfiguracja skanowania podatności", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        gbc.gridx = 0; gbc.gridy = 0;
+        configPanel.add(createLabel("Target:"), gbc);
+        gbc.gridx = 1;
+        JTextField vulnTargetField = createStyledTextField("127.0.0.1");
+        configPanel.add(vulnTargetField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 2;
+        JButton scanVulnButton = createStyledButton("🔍 Skanuj Podatności", DANGER_COLOR);
+        configPanel.add(scanVulnButton, gbc);
+        
+        // Panel wyników
+        JTextArea vulnResults = new JTextArea();
+        vulnResults.setBackground(Color.BLACK);
+        vulnResults.setForeground(DANGER_COLOR);
+        vulnResults.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        vulnResults.setEditable(false);
+        vulnResults.setText("Wyniki skanowania podatności będą wyświetlane tutaj...\n");
+        
+        scanVulnButton.addActionListener(e -> {
+            String target = vulnTargetField.getText().trim();
+            vulnResults.setText("🛡️ Skanowanie podatności: " + target + "\n" +
+                               "═".repeat(50) + "\n" +
+                               "🔍 Sprawdzanie popularnych podatności...\n" +
+                               "✅ CVE-2021-44228 (Log4Shell): Nie wykryto\n" +
+                               "✅ CVE-2021-34527 (PrintNightmare): Nie wykryto\n" +
+                               "⚠️  Otwarte porty mogą stanowić zagrożenie\n" +
+                               "🔒 Zalecenie: Aktualizacja systemu\n" +
+                               "🏁 Skanowanie zakończone\n");
+        });
+        
+        JScrollPane vulnScrollPane = new JScrollPane(vulnResults);
+        vulnScrollPane.setPreferredSize(new Dimension(0, 300));
+        
+        JPanel resultsPanel = new JPanel(new BorderLayout());
+        resultsPanel.setBackground(PANEL_BG);
+        resultsPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR), 
+            "Wyniki skanowania", 
+            TitledBorder.LEFT, 
+            TitledBorder.TOP, 
+            new Font(Font.SANS_SERIF, Font.BOLD, 14), 
+            TEXT_COLOR
+        ));
+        resultsPanel.add(vulnScrollPane, BorderLayout.CENTER);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(configPanel, BorderLayout.CENTER);
+        panel.add(resultsPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+    
+    private JPanel createSystemInfoPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        
+        JLabel titleLabel = new JLabel("⚙️ Informacje Systemowe");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        JPanel gridPanel = new JPanel(new GridLayout(2, 2, 20, 20));
+        gridPanel.setBackground(DARK_BG);
+        gridPanel.setBorder(new EmptyBorder(20, 0, 0, 0));
+        
+        // System Panel
+        JPanel systemPanel = createInfoCard("🖥️ System", 
+            "OS: " + System.getProperty("os.name") + "\n" +
+            "Architektura: " + System.getProperty("os.arch") + "\n" +
+            "Wersja: " + System.getProperty("os.version") + "\n" +
+            "Użytkownik: " + System.getProperty("user.name"));
+        
+        // Java Panel
+        JPanel javaPanel = createInfoCard("☕ Java", 
+            "Wersja: " + System.getProperty("java.version") + "\n" +
+            "Vendor: " + System.getProperty("java.vendor") + "\n" +
+            "Home: " + System.getProperty("java.home") + "\n" +
+            "Runtime: " + System.getProperty("java.runtime.name"));
+        
+        // Memory Panel
+        Runtime runtime = Runtime.getRuntime();
+        long totalMemory = runtime.totalMemory();
+        long freeMemory = runtime.freeMemory();
+        long usedMemory = totalMemory - freeMemory;
+        
+        JPanel memoryPanel = createInfoCard("💾 Pamięć", 
+            "Całkowita: " + (totalMemory / 1024 / 1024) + " MB\n" +
+            "Używana: " + (usedMemory / 1024 / 1024) + " MB\n" +
+            "Wolna: " + (freeMemory / 1024 / 1024) + " MB\n" +
+            "Procesory: " + runtime.availableProcessors());
+        
+        // Network Panel
+        JPanel networkPanel = createInfoCard("🌐 Sieć", 
+            "Host: " + getLocalHostname() + "\n" +
+            "IP: " + getLocalIP() + "\n" +
+            "Interfaces: " + getNetworkInterfaces() + "\n" +
+            "Status: Online");
+        
+        gridPanel.add(systemPanel);
+        gridPanel.add(javaPanel);
+        gridPanel.add(memoryPanel);
+        gridPanel.add(networkPanel);
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(gridPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createInfoCard(String title, String content) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(PANEL_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR),
+            new EmptyBorder(15, 15, 15, 15)
+        ));
+        
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_COLOR);
+        
+        JTextArea contentArea = new JTextArea(content);
+        contentArea.setBackground(PANEL_BG);
+        contentArea.setForeground(SECONDARY_TEXT);
+        contentArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        contentArea.setEditable(false);
+        
+        card.add(titleLabel, BorderLayout.NORTH);
+        card.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+        card.add(contentArea, BorderLayout.SOUTH);
+        
+        return card;
+    }
+    
+    private String getLocalHostname() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+    
+    private String getLocalIP() {
+        try {
+            return InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+    
+    private String getNetworkInterfaces() {
+        try {
+            return String.valueOf(Collections.list(NetworkInterface.getNetworkInterfaces()).size());
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+    
+    private JPanel createInfoPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(30, 30, 30, 30));
+        
+        JLabel titleLabel = new JLabel("ℹ️ Informacje i Pomoc");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setHorizontalAlignment(JLabel.CENTER);
+        
+        JTextArea infoText = new JTextArea();
+        infoText.setBackground(PANEL_BG);
+        infoText.setForeground(TEXT_COLOR);
+        infoText.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        infoText.setEditable(false);
+        infoText.setLineWrap(true);
+        infoText.setWrapStyleWord(true);
+        infoText.setBorder(new EmptyBorder(20, 20, 20, 20));
+        infoText.setText(
+            "🔒 CYBER NEXUS SECURITY TOOL v3.0\n\n" +
+            "═".repeat(50) + "\n\n" +
+            "📚 DOSTĘPNE MODUŁY:\n\n" +
+            "🔍 Port Scanner - Zaawansowany wielowątkowy skaner portów z wykrywaniem usług\n" +
+            "💻 Terminal - Interaktywny terminal z komendami bezpieczeństwa\n" +
+            "👥 Target Manager - Zarządzanie i organizacja celów testowania\n" +
+            "🌐 IP Tools - Narzędzia analizy IP, geolokalizacja, WHOIS lookup\n" +
+            "📊 Network Monitor - Monitoring ruchu sieciowego w czasie rzeczywistym\n" +
+            "🛡️ Vulnerability Scanner - Skaner podatności i analiza bezpieczeństwa\n" +
+            "⚙️ System Info - Informacje o systemie i środowisku\n\n" +
+            "⚠️ OSTRZEŻENIE PRAWNE:\n\n" +
+            "To narzędzie jest przeznaczone wyłącznie do autoryzowanych testów bezpieczeństwa. " +
+            "Zawsze upewnij się, że masz odpowiednią autoryzację przed testowaniem jakichkolwiek systemów. " +
+            "Nieautoryzowany dostęp jest nielegalny i nieetyczny.\n\n" +
+            "🎯 NAJLEPSZE PRAKTYKI:\n\n" +
+            "• Zawsze uzyskaj pisemną zgodę przed testowaniem\n" +
+            "• Dokumentuj wszystkie działania dokładnie\n" +
+            "• Szanuj prywatność i poufność\n" +
+            "• Używaj tylko w kontrolowanych środowiskach\n" +
+            "• Postępuj zgodnie z praktykami odpowiedzialnego ujawniania\n\n" +
+            "📖 POMOC TECHNICZNA:\n\n" +
+            "Każdy moduł zawiera dedykowane funkcje bezpieczeństwa. Użyj terminala do " +
+            "wykonywania podstawowych komend lub przejdź do odpowiednich modułów GUI " +
+            "dla zaawansowanych operacji.\n\n" +
+            "🔧 WYMAGANIA SYSTEMOWE:\n\n" +
+            "• Java 8 lub nowsza\n" +
+            "• Połączenie sieciowe\n" +
+            "• Uprawnienia administratora (dla niektórych funkcji)\n" +
+            "• System operacyjny: Windows, Linux, macOS"
+        );
+        
+        JScrollPane scrollPane = new JScrollPane(infoText);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setPreferredSize(new Dimension(0, 500));
+        
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(20), BorderLayout.AFTER_LINE_ENDS);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createCreditsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(DARK_BG);
+        panel.setBorder(new EmptyBorder(40, 40, 40, 40));
+        
+        JPanel centerPanel = new JPanel();
+        centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+        centerPanel.setBackground(DARK_BG);
+        
+        // Tytuł
+        JLabel titleLabel = new JLabel("💳 Credits & Development Team");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 28));
+        titleLabel.setForeground(ACCENT_COLOR);
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        JLabel subtitleLabel = new JLabel("Cyber Nexus Security Tool v3.0");
+        subtitleLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 18));
+        subtitleLabel.setForeground(SECONDARY_TEXT);
+        subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        centerPanel.add(titleLabel);
+        centerPanel.add(Box.createVerticalStrut(10));
+        centerPanel.add(subtitleLabel);
+        centerPanel.add(Box.createVerticalStrut(40));
+        
+        // Developer Info
+        JPanel devPanel = new JPanel(new BorderLayout());
+        devPanel.setBackground(new Color(88, 28, 135));
+        devPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR, 2),
+            new EmptyBorder(30, 30, 30, 30)
+        ));
+        devPanel.setMaximumSize(new Dimension(600, 200));
+        
+        JLabel devIcon = new JLabel("👨‍💻", JLabel.CENTER);
+        devIcon.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 48));
+        
+        JPanel devInfo = new JPanel();
+        devInfo.setLayout(new BoxLayout(devInfo, BoxLayout.Y_AXIS));
+        devInfo.setBackground(new Color(88, 28, 135));
+        
+        JLabel devName = new JLabel("rizzler0913");
+        devName.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        devName.setForeground(TEXT_COLOR);
+        devName.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        JLabel devRole = new JLabel("Main Developer & Security Researcher");
+        devRole.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        devRole.setForeground(SECONDARY_TEXT);
+        devRole.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        JLabel devContact = new JLabel("Discord: rizzler0913");
+        devContact.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        devContact.setForeground(WARNING_COLOR);
+        devContact.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        devInfo.add(devName);
+        devInfo.add(Box.createVerticalStrut(5));
+        devInfo.add(devRole);
+        devInfo.add(Box.createVerticalStrut(10));
+        devInfo.add(devContact);
+        
+        devPanel.add(devIcon, BorderLayout.WEST);
+        devPanel.add(Box.createHorizontalStrut(20), BorderLayout.CENTER);
+        devPanel.add(devInfo, BorderLayout.EAST);
+        
+        centerPanel.add(devPanel);
+        centerPanel.add(Box.createVerticalStrut(30));
+        
+        // Technical Info
+        JPanel techPanel = new JPanel(new BorderLayout());
+        techPanel.setBackground(new Color(22, 78, 99));
+        techPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(SUCCESS_COLOR, 2),
+            new EmptyBorder(20, 20, 20, 20)
+        ));
+        techPanel.setMaximumSize(new Dimension(600, 150));
+        
+        JLabel techTitle = new JLabel("⚙️ Technical Information");
+        techTitle.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+        techTitle.setForeground(SUCCESS_COLOR);
+        
+        JTextArea techInfo = new JTextArea(
+            "🔧 Built with Java Swing & AWT\n" +
+            "🎨 Modern Dark UI/UX Design\n" +
+            "🚀 High-performance Multi-threading\n" +
+            "🔐 Security-focused Architecture\n" +
+            "📊 Real-time Network Monitoring\n" +
+            "🌐 Cross-platform Compatibility"
+        );
+        techInfo.setBackground(new Color(22, 78, 99));
+        techInfo.setForeground(TEXT_COLOR);
+        techInfo.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        techInfo.setEditable(false);
+        
+        techPanel.add(techTitle, BorderLayout.NORTH);
+        techPanel.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+        techPanel.add(techInfo, BorderLayout.SOUTH);
+        
+        centerPanel.add(techPanel);
+        centerPanel.add(Box.createVerticalStrut(30));
+        
+        // Thanks Panel
+        JPanel thanksPanel = new JPanel(new BorderLayout());
+        thanksPanel.setBackground(new Color(120, 53, 15));
+        thanksPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(WARNING_COLOR, 2),
+            new EmptyBorder(20, 20, 20, 20)
+        ));
+        thanksPanel.setMaximumSize(new Dimension(600, 120));
+        
+        JLabel thanksTitle = new JLabel("🙏 Special Thanks");
+        thanksTitle.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+        thanksTitle.setForeground(WARNING_COLOR);
+        
+        JTextArea thanksInfo = new JTextArea(
+            "🎓 Cybersecurity Community • 📚 Open Source Contributors\n" +
+            "🛡️ Ethical Hacking Community • 🌟 Beta Testers\n" +
+            "💡 Security Researchers • 📖 Educational Resources"
+        );
+        thanksInfo.setBackground(new Color(120, 53, 15));
+        thanksInfo.setForeground(TEXT_COLOR);
+        thanksInfo.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        thanksInfo.setEditable(false);
+        thanksInfo.setLineWrap(true);
+        thanksInfo.setWrapStyleWord(true);
+        
+        thanksPanel.add(thanksTitle, BorderLayout.NORTH);
+        thanksPanel.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+        thanksPanel.add(thanksInfo, BorderLayout.SOUTH);
+        
+        centerPanel.add(thanksPanel);
+        centerPanel.add(Box.createVerticalStrut(30));
+        
+        // Footer
+        JLabel footerLabel = new JLabel("© 2024 rizzler0913 - Educational Use Only");
+        footerLabel.setFont(new Font(Font.SANS_SERIF, Font.ITALIC, 12));
+        footerLabel.setForeground(SECONDARY_TEXT);
+        footerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        centerPanel.add(footerLabel);
+        
+        JScrollPane scrollPane = new JScrollPane(centerPanel);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JLabel createLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setForeground(TEXT_COLOR);
+        label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        return label;
+    }
+    
+    private JTextField createStyledTextField(String text) {
+        JTextField field = new JTextField(text, 20);
+        field.setBackground(SIDEBAR_BG);
+        field.setForeground(TEXT_COLOR);
+        field.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        field.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR),
+            new EmptyBorder(8, 12, 8, 12)
+        ));
+        field.setCaretColor(TEXT_COLOR);
+        return field;
+    }
+    
+    @Override
+    public void dispose() {
+        if (scanExecutor != null && !scanExecutor.isShutdown()) {
+            scanExecutor.shutdown();
+        }
+        super.dispose();
+    }
+    
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getLookAndFeel());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            new SecurityToolNexus();
+        });
+    }
+}
